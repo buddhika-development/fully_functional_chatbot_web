@@ -1,39 +1,67 @@
-import { UserButton } from "@clerk/nextjs";
+"use client";
+import { Sparkles, Mic, ArrowRight, Plus } from "lucide-react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 
-export default function Dashboard() {
+export default function AppPage() {
+  const [input, setInput] = useState("");
+  const router = useRouter();
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+    // Generate a random ID for demonstration and redirect
+    const sessionId = Math.random().toString(36).substring(7);
+    router.push(`/app/${sessionId}`);
+  };
+
   return (
-    <div className="min-h-screen w-full bg-[#0a0a0a] text-white flex flex-col selection:bg-[#333]">
-      <header className="border-b border-[#27272a] h-16 flex items-center justify-between px-8 bg-[#0f0f0f]">
-        <div className="font-serif text-xl font-bold tracking-tight">Think fast, learn fast</div>
-        <UserButton 
-          appearance={{
-            elements: {
-              avatarBox: "w-9 h-9 border border-[#27272a]"
-            }
-          }}
-        />
-      </header>
-      
-      <main className="flex-1 p-8 flex flex-col max-w-6xl w-full mx-auto">
-        <div className="flex flex-col gap-2 mb-10 mt-8">
-          <h1 className="text-3xl font-semibold text-[#e4e4e7]">Dashboard</h1>
-          <p className="text-[#a1a1aa]">Welcome back. Ready to learn fast?</p>
-        </div>
+    <div className="flex-1 flex flex-col items-center justify-center relative w-full h-full">
+      <div className="w-full max-w-3xl px-4 flex flex-col items-center mt-[-10vh]">
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-48 rounded-2xl border border-[#27272a] bg-[#121212] p-6 hover:border-[#3f3f46] transition-colors flex flex-col justify-between">
-              <div className="w-10 h-10 rounded-full bg-[#1e1e24] flex items-center justify-center">
-                <div className="w-5 h-5 rounded-full border-2 border-[#52525b]"></div>
-              </div>
-              <div>
-                <h3 className="font-medium text-[#e4e4e7]">Recent Activity {i}</h3>
-                <p className="text-sm text-[#71717a] mt-1">Chat history and files</p>
-              </div>
-            </div>
-          ))}
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-6">
+          <Sparkles className="w-6 h-6 text-orange-400" />
+          <h1 className="text-3xl md:text-4xl font-serif text-[#e4e4e7] tracking-tight">
+            What shall we think through?
+          </h1>
         </div>
-      </main>
+
+        {/* Input Box */}
+        <form onSubmit={handleSubmit} className="w-full relative bg-[#27272a] rounded-2xl border border-[#3f3f46] shadow-lg transition-all focus-within:border-[#52525b] focus-within:ring-1 focus-within:ring-[#52525b] flex items-center px-4 py-2 mt-4">
+          <button type="button" className="text-[#a1a1aa] hover:text-[#e4e4e7] transition-colors p-1">
+            <Plus className="w-5 h-5" />
+          </button>
+          
+          <textarea 
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="How can I help you today?"
+            className="flex-1 bg-transparent border-none text-[#e4e4e7] placeholder:text-[#a1a1aa] resize-none focus:outline-none focus:ring-0 text-base py-3 mx-2 max-h-[160px] min-h-[24px]"
+            rows={1}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSubmit(e);
+              }
+            }}
+          />
+          
+          <div className="flex items-center gap-1">
+            <button type="button" className="text-[#a1a1aa] hover:text-[#e4e4e7] transition-colors p-1">
+              <Mic className="w-4 h-4" />
+            </button>
+            <button 
+              type="submit"
+              disabled={!input.trim()}
+              className="p-1 bg-white text-black disabled:bg-[#3f3f46] disabled:text-[#71717a] transition-colors rounded-md ml-1"
+            >
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        </form>
+
+      </div>
     </div>
   );
 }
