@@ -1,8 +1,22 @@
 "use client";
-import { UserButton } from "@clerk/nextjs";
-import { Plus, Sparkles, PanelLeft } from "lucide-react";
+import { UserButton, useAuth } from "@clerk/nextjs";
+import { Plus, Sparkles, PanelLeft, MoreHorizontal, Share, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter, usePathname } from "next/navigation";
+
+type ChatSession = {
+  id: string;
+  session_title: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type Toast = {
+  id: string;
+  message: string;
+  type: "success" | "error";
+};
 
 export default function AppLayout({
   children,
@@ -10,9 +24,149 @@ export default function AppLayout({
   children: React.ReactNode;
 }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const { getToken } = useAuth();
+  const [todaySessions, setTodaySessions] = useState<ChatSession[]>([]);
+  const [previousSessions, setPreviousSessions] = useState<ChatSession[]>([]);
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    const id = Math.random().toString(36).substring(7);
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 3000);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.closest(".menu-trigger") || target.closest(".menu-dropdown")) {
+        return;
+      }
+      setActiveMenuId(null);
+    };
+    document.addEventListener("click", handleClickOutside);
+    return () => document.removeEventListener("click", handleClickOutside);
+  }, []);
+
+  const handleShare = (id: string) => {
+    const url = `${window.location.origin}/app/${id}`;
+    navigator.clipboard.writeText(url);
+    showToast("Link copied to clipboard!", "success");
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+
+      const res = await fetch(`/api/v1/chat_session/${id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (res.ok) {
+        setTodaySessions(prev => prev.filter(s => s.id !== id));
+        setPreviousSessions(prev => prev.filter(s => s.id !== id));
+        showToast("Chat session deleted successfully", "success");
+
+        if (pathname === `/app/${id}`) {
+          router.push("/app");
+        }
+      } else {
+        showToast("Failed to delete chat session", "error");
+        console.error("Failed to delete session");
+      }
+    } catch (err) {
+      showToast("Error deleting chat session", "error");
+      console.error("Error deleting session:", err);
+    }
+  };
+
+  useEffect(() => {
+    const fetchSessions = async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        
+        const res = await fetch(`/api/v1/chat_session/me`, {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+        const data = await res.json();
+        if (data.status === "success") {
+          const sessions: ChatSession[] = data.data;
+          
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+
+          const todayList: ChatSession[] = [];
+          const previousList: ChatSession[] = [];
+
+          sessions.forEach(session => {
+            const sessionDate = new Date(session.created_at);
+            if (sessionDate >= today) {
+              todayList.push(session);
+            } else {
+              previousList.push(session);
+            }
+          });
+
+          // Sort by newest first
+          todayList.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+          previousList.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+          setTodaySessions(todayList);
+          setPreviousSessions(previousList);
+        }
+      } catch (err) {
+        console.error("Failed to fetch sessions:", err);
+      }
+    };
+    fetchSessions();
+  }, [getToken]);
 
   return (
     <div className="flex h-screen w-full bg-[#1A1A1A] text-[#e4e4e7] overflow-hidden font-sans">
+      <style dangerouslySetInnerHTML={{__html: `
+        .sidebar-scroll::-webkit-scrollbar {
+          width: 5px;
+        }
+        .sidebar-scroll::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .sidebar-scroll::-webkit-scrollbar-thumb {
+          background: #27272a;
+          border-radius: 10px;
+        }
+        .sidebar-scroll::-webkit-scrollbar-thumb:hover {
+          background: #3f3f46;
+        }
+        .sidebar-scroll {
+          scrollbar-width: thin;
+          scrollbar-color: #27272a transparent;
+        }
+        @keyframes slideIn {
+          from {
+            transform: translateY(1rem);
+            opacity: 0;
+          }
+          to {
+            transform: translateY(0);
+            opacity: 1;
+          }
+        }
+        .animate-slide-in {
+          animation: slideIn 0.2s ease-out forwards;
+        }
+      `}} />
       {/* Sidebar */}
       <div 
         className={`${isSidebarOpen ? 'w-[260px]' : 'w-[60px]'} flex-shrink-0 flex flex-col bg-[#111111] border-r border-[#27272a] h-full transition-all duration-300 ease-in-out`}
@@ -43,28 +197,132 @@ export default function AppLayout({
         </div>
 
         {isSidebarOpen && (
-          <div className="flex-1 overflow-y-auto px-3 mt-4 transition-opacity duration-300 opacity-100">
-            <div className="text-[11px] font-semibold text-[#71717a] px-3 mb-1 uppercase tracking-wider">
-              Recents
-            </div>
-            <div className="flex flex-col gap-0">
-              {[
-                { id: "1", title: "Database null constraint violation" },
-                { id: "2", title: "Industrial FastAPI project structure" },
-                { id: "3", title: "Understanding machine learning" },
-                { id: "4", title: "Chatbot personalization explained" },
-                { id: "5", title: "Evaluating expense tracking data" },
-                { id: "6", title: "React Router syntax error" },
-              ].map((chat) => (
-                <Link 
-                  key={chat.id} 
-                  href={`/app/${chat.id}`}
-                  className="block px-3 py-1.5 rounded-md hover:bg-[#27272a] text-[13px] text-[#d4d4d8] truncate transition-colors"
-                >
-                  {chat.title}
-                </Link>
-              ))}
-            </div>
+          <div className="flex-1 overflow-y-auto px-3 mt-4 transition-opacity duration-300 opacity-100 sidebar-scroll">
+            {todaySessions.length > 0 && (
+              <div className="mb-4">
+                <div className="text-[11px] font-semibold text-[#71717a] px-3 mb-1 uppercase tracking-wider">
+                  Today
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  {todaySessions.map((chat) => (
+                    <div 
+                      key={chat.id}
+                      className="group relative flex items-center justify-between rounded-md hover:bg-[#27272a] text-[13px] text-[#d4d4d8] transition-colors"
+                    >
+                      <Link 
+                        href={`/app/${chat.id}`}
+                        className="flex-1 px-3 py-1.5 truncate pr-8"
+                      >
+                        {chat.session_title || "New chat"}
+                      </Link>
+                      
+                      <button 
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setActiveMenuId(activeMenuId === chat.id ? null : chat.id);
+                        }}
+                        className={`menu-trigger absolute right-1 z-10 p-1 hover:text-[#e4e4e7] text-[#a1a1aa] transition-opacity duration-150 rounded hover:bg-[#3f3f46]/50 ${activeMenuId === chat.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus:opacity-100'}`}
+                      >
+                        <MoreHorizontal className="w-3.5 h-3.5" />
+                      </button>
+
+                      {activeMenuId === chat.id && (
+                        <div className="menu-dropdown absolute right-1 top-7 z-50 w-28 bg-[#1e1e1e] border border-[#3f3f46] rounded-md shadow-xl py-1">
+                          <button 
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleShare(chat.id);
+                              setActiveMenuId(null);
+                            }}
+                            className="w-full text-left px-3 py-1.5 hover:bg-[#27272a] text-[#d4d4d8] text-[12px] flex items-center gap-2"
+                          >
+                            <Share className="w-3.5 h-3.5" />
+                            Share
+                          </button>
+                          <button 
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleDelete(chat.id);
+                              setActiveMenuId(null);
+                            }}
+                            className="w-full text-left px-3 py-1.5 hover:bg-[#27272a] text-red-400 text-[12px] flex items-center gap-2"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {previousSessions.length > 0 && (
+              <div className="mb-4">
+                <div className="text-[11px] font-semibold text-[#71717a] px-3 mb-1 uppercase tracking-wider">
+                  Previous
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  {previousSessions.map((chat) => (
+                    <div 
+                      key={chat.id}
+                      className="group relative flex items-center justify-between rounded-md hover:bg-[#27272a] text-[13px] text-[#d4d4d8] transition-colors"
+                    >
+                      <Link 
+                        href={`/app/${chat.id}`}
+                        className="flex-1 px-3 py-1.5 truncate pr-8"
+                      >
+                        {chat.session_title || "New chat"}
+                      </Link>
+                      
+                      <button 
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setActiveMenuId(activeMenuId === chat.id ? null : chat.id);
+                        }}
+                        className={`menu-trigger absolute right-1 z-10 p-1 hover:text-[#e4e4e7] text-[#a1a1aa] transition-opacity duration-150 rounded hover:bg-[#3f3f46]/50 ${activeMenuId === chat.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus:opacity-100'}`}
+                      >
+                        <MoreHorizontal className="w-3.5 h-3.5" />
+                      </button>
+
+                      {activeMenuId === chat.id && (
+                        <div className="menu-dropdown absolute right-1 top-7 z-50 w-28 bg-[#1e1e1e] border border-[#3f3f46] rounded-md shadow-xl py-1">
+                          <button 
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleShare(chat.id);
+                              setActiveMenuId(null);
+                            }}
+                            className="w-full text-left px-3 py-1.5 hover:bg-[#27272a] text-[#d4d4d8] text-[12px] flex items-center gap-2"
+                          >
+                            <Share className="w-3.5 h-3.5" />
+                            Share
+                          </button>
+                          <button 
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleDelete(chat.id);
+                              setActiveMenuId(null);
+                            }}
+                            className="w-full text-left px-3 py-1.5 hover:bg-[#27272a] text-red-400 text-[12px] flex items-center gap-2"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
         
@@ -89,6 +347,27 @@ export default function AppLayout({
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col h-full bg-[#1A1A1A] relative overflow-hidden">
         {children}
+      </div>
+
+      {/* Toast Notification Container */}
+      <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`flex items-center gap-2 px-4 py-3 rounded-lg shadow-xl text-[13px] border transition-all duration-300 animate-slide-in pointer-events-auto ${
+              toast.type === "success"
+                ? "bg-[#1e1e1e]/90 text-[#e4e4e7] border-[#22c55e]/30"
+                : "bg-[#1e1e1e]/90 text-[#e4e4e7] border-red-500/30"
+            }`}
+          >
+            {toast.type === "success" ? (
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse flex-shrink-0" />
+            ) : (
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+            )}
+            <span>{toast.message}</span>
+          </div>
+        ))}
       </div>
     </div>
   );

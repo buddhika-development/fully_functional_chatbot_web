@@ -1,11 +1,22 @@
 "use client";
 import { Mic, ArrowRight, ChevronDown, Plus } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useParams } from "next/navigation";
 
 export default function ChatSessionPage() {
   const [input, setInput] = useState("");
   const params = useParams();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    // Reset height to calculate scrollHeight correctly
+    textarea.style.height = "auto";
+    // Set height to scrollHeight (bounded by CSS max-h-32)
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [input]);
 
   return (
     <div className="flex-1 flex flex-col h-full relative w-full">
@@ -55,27 +66,28 @@ export default function ChatSessionPage() {
       {/* Sticky Input */}
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-[#1A1A1A] via-[#1A1A1A] to-transparent pt-8 pb-5 px-4">
         <div className="max-w-3xl mx-auto">
-          <form className="w-full relative bg-[#27272a] rounded-xl border border-[#3f3f46] shadow-lg focus-within:border-[#52525b] focus-within:ring-1 focus-within:ring-[#52525b] flex items-center px-4 py-2">
-            <button type="button" className="text-[#a1a1aa] hover:text-[#e4e4e7] transition-colors p-1">
+          <form className="w-full relative bg-[#27272a] rounded-xl border border-[#3f3f46] shadow-lg focus-within:border-[#52525b] focus-within:ring-1 focus-within:ring-[#52525b] flex items-end px-4 py-2">
+            <button type="button" className="text-[#a1a1aa] hover:text-[#e4e4e7] transition-colors p-2 mb-0.5">
               <Plus className="w-4 h-4" />
             </button>
             
             <textarea 
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Write a message..."
-              className="flex-1 bg-transparent border-none text-[#e4e4e7] placeholder:text-[#a1a1aa] text-[14px] resize-none focus:outline-none focus:ring-0 max-h-32 min-h-[24px] py-1.5 mx-2"
+              className="flex-1 bg-transparent border-none text-[#e4e4e7] placeholder:text-[#a1a1aa] text-[14px] resize-none focus:outline-none focus:ring-0 max-h-32 min-h-[24px] py-2 mx-2 sidebar-scroll"
               rows={1}
             />
             
-            <div className="flex items-center gap-1">
-              <button type="button" className="p-1 text-[#a1a1aa] hover:text-[#e4e4e7] transition-colors rounded-md hover:bg-[#3f3f46]/50">
+            <div className="flex items-center gap-1 mb-1">
+              <button type="button" className="p-1.5 text-[#a1a1aa] hover:text-[#e4e4e7] transition-colors rounded-md hover:bg-[#3f3f46]/50">
                 <Mic className="w-4 h-4" />
               </button>
               <button 
                 type="submit"
                 disabled={!input.trim()}
-                className="p-1 bg-white text-black disabled:bg-[#3f3f46] disabled:text-[#71717a] transition-colors rounded-md ml-1"
+                className="p-1.5 bg-white text-black disabled:bg-[#3f3f46] disabled:text-[#71717a] transition-colors rounded-md ml-1"
               >
                 <ArrowRight className="w-4 h-4" />
               </button>
