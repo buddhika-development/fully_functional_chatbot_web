@@ -1,45 +1,32 @@
 "use client";
-import { UserButton, useAuth } from "@clerk/nextjs";
+import "highlight.js/styles/github-dark.css";
+import { UserButton } from "@clerk/nextjs";
 import { Plus, Sparkles, PanelLeft, MoreHorizontal, Share, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { ChatProvider, useChat } from "./ChatContext";
 
-type ChatSession = {
-  id: string;
-  session_title: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-type Toast = {
-  id: string;
-  message: string;
-  type: "success" | "error";
-};
-
-export default function AppLayout({
+function AppLayoutContent({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const { getToken } = useAuth();
-  const [todaySessions, setTodaySessions] = useState<ChatSession[]>([]);
-  const [previousSessions, setPreviousSessions] = useState<ChatSession[]>([]);
-  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const {
+    isSidebarOpen,
+    todaySessions,
+    previousSessions,
+    activeMenuId,
+    toasts,
+    activeSessionId,
+    setIsSidebarOpen,
+    setActiveMenuId,
+    showToast,
+    handleDeleteSession,
+  } = useChat();
 
   const router = useRouter();
   const pathname = usePathname();
-
-  const showToast = (message: string, type: "success" | "error" = "success") => {
-    const id = Math.random().toString(36).substring(7);
-    setToasts(prev => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, 3000);
-  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -51,7 +38,7 @@ export default function AppLayout({
     };
     document.addEventListener("click", handleClickOutside);
     return () => document.removeEventListener("click", handleClickOutside);
-  }, []);
+  }, [setActiveMenuId]);
 
   const handleShare = (id: string) => {
     const url = `${window.location.origin}/app/${id}`;
@@ -59,79 +46,7 @@ export default function AppLayout({
     showToast("Link copied to clipboard!", "success");
   };
 
-  const handleDelete = async (id: string) => {
-    try {
-      const token = await getToken();
-      if (!token) return;
-
-      const res = await fetch(`/api/v1/chat_session/${id}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-
-      if (res.ok) {
-        setTodaySessions(prev => prev.filter(s => s.id !== id));
-        setPreviousSessions(prev => prev.filter(s => s.id !== id));
-        showToast("Chat session deleted successfully", "success");
-
-        if (pathname === `/app/${id}`) {
-          router.push("/app");
-        }
-      } else {
-        showToast("Failed to delete chat session", "error");
-        console.error("Failed to delete session");
-      }
-    } catch (err) {
-      showToast("Error deleting chat session", "error");
-      console.error("Error deleting session:", err);
-    }
-  };
-
-  useEffect(() => {
-    const fetchSessions = async () => {
-      try {
-        const token = await getToken();
-        if (!token) return;
-        
-        const res = await fetch(`/api/v1/chat_session/me`, {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        });
-        const data = await res.json();
-        if (data.status === "success") {
-          const sessions: ChatSession[] = data.data;
-          
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-
-          const todayList: ChatSession[] = [];
-          const previousList: ChatSession[] = [];
-
-          sessions.forEach(session => {
-            const sessionDate = new Date(session.created_at);
-            if (sessionDate >= today) {
-              todayList.push(session);
-            } else {
-              previousList.push(session);
-            }
-          });
-
-          // Sort by newest first
-          todayList.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-          previousList.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-          setTodaySessions(todayList);
-          setPreviousSessions(previousList);
-        }
-      } catch (err) {
-        console.error("Failed to fetch sessions:", err);
-      }
-    };
-    fetchSessions();
-  }, [getToken]);
+  const isNewChat = pathname === "/app";
 
   return (
     <div className="flex h-screen w-full bg-[#1A1A1A] text-[#e4e4e7] overflow-hidden font-sans">
@@ -190,7 +105,14 @@ export default function AppLayout({
         </div>
 
         <div className="px-3 py-1">
-          <Link href="/app" className={`flex items-center ${isSidebarOpen ? 'gap-3 px-3' : 'justify-center'} py-2 rounded-lg hover:bg-[#27272a] text-[14px] transition-colors border border-[#3f3f46]/50 bg-[#1e1e1e]`}>
+          <Link 
+            href="/app" 
+            className={`flex items-center ${isSidebarOpen ? 'gap-3 px-3' : 'justify-center'} py-2 rounded-lg text-[14px] transition-colors border ${
+              isNewChat 
+                ? 'bg-[#27272a] text-white border-[#52525b]' 
+                : 'hover:bg-[#27272a] border-[#3f3f46]/50 bg-[#1e1e1e]'
+            }`}
+          >
             <Plus className="w-4 h-4 flex-shrink-0" />
             {isSidebarOpen && <span className="truncate">New chat</span>}
           </Link>
@@ -207,7 +129,9 @@ export default function AppLayout({
                   {todaySessions.map((chat) => (
                     <div 
                       key={chat.id}
-                      className="group relative flex items-center justify-between rounded-md hover:bg-[#27272a] text-[13px] text-[#d4d4d8] transition-colors"
+                      className={`group relative flex items-center justify-between rounded-md text-[13px] text-[#d4d4d8] transition-colors ${
+                        activeSessionId === chat.id ? 'bg-[#27272a] text-white' : 'hover:bg-[#27272a]'
+                      }`}
                     >
                       <Link 
                         href={`/app/${chat.id}`}
@@ -245,7 +169,7 @@ export default function AppLayout({
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              handleDelete(chat.id);
+                              handleDeleteSession(chat.id);
                               setActiveMenuId(null);
                             }}
                             className="w-full text-left px-3 py-1.5 hover:bg-[#27272a] text-red-400 text-[12px] flex items-center gap-2"
@@ -270,7 +194,9 @@ export default function AppLayout({
                   {previousSessions.map((chat) => (
                     <div 
                       key={chat.id}
-                      className="group relative flex items-center justify-between rounded-md hover:bg-[#27272a] text-[13px] text-[#d4d4d8] transition-colors"
+                      className={`group relative flex items-center justify-between rounded-md text-[13px] text-[#d4d4d8] transition-colors ${
+                        activeSessionId === chat.id ? 'bg-[#27272a] text-white' : 'hover:bg-[#27272a]'
+                      }`}
                     >
                       <Link 
                         href={`/app/${chat.id}`}
@@ -308,7 +234,7 @@ export default function AppLayout({
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              handleDelete(chat.id);
+                              handleDeleteSession(chat.id);
                               setActiveMenuId(null);
                             }}
                             className="w-full text-left px-3 py-1.5 hover:bg-[#27272a] text-red-400 text-[12px] flex items-center gap-2"
@@ -370,5 +296,17 @@ export default function AppLayout({
         ))}
       </div>
     </div>
+  );
+}
+
+export default function AppLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <ChatProvider>
+      <AppLayoutContent>{children}</AppLayoutContent>
+    </ChatProvider>
   );
 }

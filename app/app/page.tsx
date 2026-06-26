@@ -1,12 +1,16 @@
 "use client";
 import { Sparkles, Mic, ArrowRight, Plus } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useChat } from "./ChatContext";
 
 export default function AppPage() {
   const [input, setInput] = useState("");
-  const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { sendMessage, clearMessages } = useChat();
+
+  useEffect(() => {
+    clearMessages();
+  }, [clearMessages]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -21,9 +25,8 @@ export default function AppPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-    // Generate a random ID for demonstration and redirect
-    const sessionId = Math.random().toString(36).substring(7);
-    router.push(`/app/${sessionId}`);
+    sendMessage(input, null);
+    setInput("");
   };
 
   return (

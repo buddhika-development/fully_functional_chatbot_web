@@ -2,11 +2,46 @@
 import { Mic, ArrowRight, ChevronDown, Plus } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useParams } from "next/navigation";
+import { useChat } from "../ChatContext";
+import MarkdownRenderer from "../MarkdownRenderer";
 
 export default function ChatSessionPage() {
   const [input, setInput] = useState("");
   const params = useParams();
+  const sessionId = typeof params.session_id === "string" ? params.session_id : "";
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const [showTopPopup, setShowTopPopup] = useState(false);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [prevScrollHeight, setPrevScrollHeight] = useState<number | null>(null);
+  const isFetchingOlderRef = useRef(false);
+
+  const {
+    messages,
+    isStreaming,
+    streamingMessage,
+    currentMessagesSessionId,
+    sendMessage,
+    fetchConversationHistory,
+    showToast,
+  } = useChat();
+
+  useEffect(() => {
+    // Fetch conversation history only if the URL sessionId doesn't match
+    // the sessionId of the messages currently in state.
+    // We skip this if streaming is active to avoid disrupting the stream redirect.
+    if (sessionId && sessionId !== currentMessagesSessionId && !isStreaming) {
+      setHasMore(true);
+      fetchConversationHistory(sessionId).then(count => {
+        if (count !== undefined && count < 10) {
+          setHasMore(false);
+        }
+      });
+    }
+  }, [sessionId, currentMessagesSessionId, isStreaming, fetchConversationHistory]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -18,55 +53,150 @@ export default function ChatSessionPage() {
     textarea.style.height = `${textarea.scrollHeight}px`;
   }, [input]);
 
+  // Scroll to bottom when messages or streamingMessage changes
+  // Only if we didn't just load older messages.
+  useEffect(() => {
+    if (!isFetchingOlderRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, streamingMessage]);
+
+  // Adjust scroll position after older messages are rendered
+  useEffect(() => {
+    if (isLoadingMore && prevScrollHeight !== null && messagesContainerRef.current) {
+      const target = messagesContainerRef.current;
+      target.scrollTop = target.scrollHeight - prevScrollHeight;
+      setPrevScrollHeight(null);
+      setIsLoadingMore(false);
+      
+      // Delay resetting the ref slightly to ensure the scroll-to-bottom effect doesn't fire
+      setTimeout(() => {
+        isFetchingOlderRef.current = false;
+      }, 50);
+    }
+  }, [messages, isLoadingMore, prevScrollHeight]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || isStreaming) return;
+    sendMessage(input, sessionId);
+    setInput("");
+  };
+
+  const handleShare = () => {
+    const url = `${window.location.origin}/app/${sessionId}`;
+    navigator.clipboard.writeText(url);
+    showToast("Link copied to clipboard!", "success");
+  };
+
+  const handleScroll = async (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLDivElement;
+    if (target.scrollTop === 0 && target.scrollHeight > target.clientHeight) {
+      if (hasMore && !isLoadingMore && !isStreaming) {
+        isFetchingOlderRef.current = true;
+        setIsLoadingMore(true);
+        setPrevScrollHeight(target.scrollHeight);
+        
+        const count = await fetchConversationHistory(sessionId, messages.length, 10, true);
+        if (count !== undefined && count < 10) {
+          setHasMore(false);
+        }
+        // isLoadingMore and prevScrollHeight are reset in the useEffect
+      } else if (!hasMore && !showTopPopup) {
+        setShowTopPopup(true);
+        if (scrollTimeoutRef.current) {
+          clearTimeout(scrollTimeoutRef.current);
+        }
+        scrollTimeoutRef.current = setTimeout(() => {
+          setShowTopPopup(false);
+        }, 3000);
+      }
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, []);
+
   return (
-    <div className="flex-1 flex flex-col h-full relative w-full">
+    <div className="flex-1 flex flex-col h-full relative w-full font-sans">
       {/* Top Header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-[#27272a] bg-[#1A1A1A]">
         <button className="flex items-center gap-1.5 text-[#a1a1aa] hover:text-[#e4e4e7] transition-colors text-[13px]">
           AI as a tool, not a knowledge source <ChevronDown className="w-3.5 h-3.5" />
         </button>
-        <button className="px-2.5 py-1 text-[11px] font-medium text-[#e4e4e7] bg-[#27272a] hover:bg-[#3f3f46] rounded-md transition-colors">
+        <button 
+          onClick={handleShare}
+          className="px-2.5 py-1 text-[11px] font-medium text-[#e4e4e7] bg-[#27272a] hover:bg-[#3f3f46] rounded-md transition-colors cursor-pointer"
+        >
           Share
         </button>
       </div>
 
       {/* Chat History */}
-      <div className="flex-1 overflow-y-auto px-4 py-6">
+      <div 
+        ref={messagesContainerRef}
+        className="flex-1 overflow-y-auto px-4 py-6 sidebar-scroll relative" 
+        onScroll={handleScroll}
+      >
+        {showTopPopup && (
+          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-[#27272a] text-[#e4e4e7] px-4 py-2 rounded-full text-xs font-medium border border-[#3f3f46] shadow-lg animate-fade-in z-10 flex items-center gap-2">
+            <span>You've reached the top of this conversation.</span>
+          </div>
+        )}
         <div className="max-w-3xl mx-auto flex flex-col gap-6 pb-28">
-          
-          {/* User Message */}
-          <div className="flex justify-end">
-            <div className="bg-[#27272a] text-[#e4e4e7] rounded-2xl rounded-tr-sm px-4 py-3 max-w-[85%] text-[14px] leading-relaxed shadow-sm">
-              I have a little question and to find answer soon as possible. Normally I am not a 100% AI person while developing ai application. Because of still I need to polish my human capabilities, increase my analysing power, better understand about how things work to apply to long term handling and their understanding.
-              <br/><br/>
-              But if I need to handle something some amount of small time I go do a base research through the AI. Also I have little trust issue right now in the AI usage more than before. Reason is currently knowledge produce by the humans. They write blogs, books, article and make them public for available to other.
-            </div>
-          </div>
+          {messages.map((msg, index) => {
+            const isHuman = msg.role === "human";
+            return isHuman ? (
+              /* User Message */
+              <div key={msg.id || index} className="flex justify-end">
+                <div className="bg-[#27272a] text-[#e4e4e7] rounded-2xl rounded-tr-sm px-4 py-3 max-w-[85%] text-[14px] leading-relaxed shadow-sm whitespace-pre-wrap">
+                  {msg.content}
+                </div>
+              </div>
+            ) : (
+              /* AI Message */
+              <div key={msg.id || index} className="flex justify-start">
+                <div className="text-[#e4e4e7] text-[14px] leading-relaxed max-w-[95%] font-serif pr-2">
+                  <MarkdownRenderer content={msg.content} />
+                </div>
+              </div>
+            );
+          })}
 
-          {/* AI Message */}
-          <div className="flex justify-start">
-            <div className="text-[#e4e4e7] text-[14px] leading-relaxed max-w-[95%] font-serif pr-2">
-              <p className="mb-3">Your thinking here is sharp, and honestly, I agree with most of it.</p>
-              
-              <p className="mb-3">The feedback loop concern is real. There's a documented phenomenon researchers call <strong>model collapse</strong> — when AI models are trained on AI-generated content, performance degrades over time because synthetic data lacks the grounding of real-world experience. You're not imagining this pattern. It's an active research concern.</p>
-              
-              <p className="mb-3">And you're right about what AI actually does. At its core, it's pattern matching over text. It has no sensory experience, no skin in the game, no consequences for being wrong. A doctor who misdiagnoses feels the weight of that. A researcher whose hypothesis fails has to confront reality. I don't have that feedback loop with the actual world — only with words about the world. That's a fundamental ceiling, not just a current limitation.</p>
-              
-              <p className="mb-3">The confidence problem you noticed is also real. I can produce a fluent, well-structured wrong answer with the same tone as a correct one. That's genuinely dangerous for someone who doesn't already know enough to spot the error. The irony is — the more you know about a domain, the safer you are using AI in it. The less you know, the more you depend on it, and the more exposed you are.</p>
-              
-              <p className="mb-3">Where I'd push back slightly is on one thing — the "most internet content is now AI-generated" claim is directionally true but probably not at the percentage people feel it is yet, especially in specialized technical domains, academic work, and primary sources. But the trend is real and accelerating, so your instinct to be concerned is sound even if the current scale is debated.</p>
-              
-              <p>Your strategic conclusion is the right one though. If most people are outsourcing their thinking to AI, genuine analytical depth becomes rarer, not more common. Rare things become valuable. The person who can actually reason through a problem, spot where AI hallucinated, understand <em>why</em> something works rather than just that it works — that person becomes harder to replace, not easier.</p>
+          {/* Incoming Assistant Stream Message */}
+          {isStreaming && streamingMessage && (
+            <div className="flex justify-start">
+              <div className="text-[#e4e4e7] text-[14px] leading-relaxed max-w-[95%] font-serif pr-2 break-words">
+                <MarkdownRenderer content={streamingMessage} showCursor />
+              </div>
             </div>
-          </div>
+          )}
 
+          {/* Thinking Indicator (Micro-animation) */}
+          {isStreaming && !streamingMessage && (
+            <div className="flex justify-start">
+              <div className="text-[#a1a1aa] text-[14px] leading-relaxed max-w-[95%] font-serif pr-2 flex items-center gap-1.5 py-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+            </div>
+          )}
+
+          {/* Anchor for Auto-scroll */}
+          <div ref={messagesEndRef} />
         </div>
       </div>
 
       {/* Sticky Input */}
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-[#1A1A1A] via-[#1A1A1A] to-transparent pt-8 pb-5 px-4">
         <div className="max-w-3xl mx-auto">
-          <form className="w-full relative bg-[#27272a] rounded-xl border border-[#3f3f46] shadow-lg focus-within:border-[#52525b] focus-within:ring-1 focus-within:ring-[#52525b] flex items-end px-4 py-2">
+          <form onSubmit={handleSubmit} className="w-full relative bg-[#27272a] rounded-xl border border-[#3f3f46] shadow-lg focus-within:border-[#52525b] focus-within:ring-1 focus-within:ring-[#52525b] flex items-end px-4 py-2">
             <button type="button" className="text-[#a1a1aa] hover:text-[#e4e4e7] transition-colors p-2 mb-0.5">
               <Plus className="w-4 h-4" />
             </button>
@@ -78,6 +208,12 @@ export default function ChatSessionPage() {
               placeholder="Write a message..."
               className="flex-1 bg-transparent border-none text-[#e4e4e7] placeholder:text-[#a1a1aa] text-[14px] resize-none focus:outline-none focus:ring-0 max-h-32 min-h-[24px] py-2 mx-2 sidebar-scroll"
               rows={1}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSubmit(e);
+                }
+              }}
             />
             
             <div className="flex items-center gap-1 mb-1">
@@ -86,7 +222,7 @@ export default function ChatSessionPage() {
               </button>
               <button 
                 type="submit"
-                disabled={!input.trim()}
+                disabled={!input.trim() || isStreaming}
                 className="p-1.5 bg-white text-black disabled:bg-[#3f3f46] disabled:text-[#71717a] transition-colors rounded-md ml-1"
               >
                 <ArrowRight className="w-4 h-4" />
